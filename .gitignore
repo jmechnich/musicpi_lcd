@@ -1,2 +1,6 @@
 *.pyc
 *~
+/files.txt
+/MANIFEST
+/build/
+/dist/
