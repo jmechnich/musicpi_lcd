@@ -18,6 +18,8 @@ def main():
         'cols': cols,
         'rows':  rows,
         'ticklength': ticklength,
+        'autochange': 0,
+        'timeout': 0,
         }
     printers  = [
         MPDPrinter(**args),
