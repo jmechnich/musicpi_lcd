@@ -1,14 +1,19 @@
 import re, subprocess
 
 from musicpi_lcd.printer import Printer
-from musicpi_lcd.text    import ScrollText
-from musicpi_lcd.util    import colors
+from musicpi_lcd.text    import *
 
 class NetworkPrinter(Printer):
     def __init__(self, **kwargs):
         super(NetworkPrinter,self).__init__(**kwargs)
     
     def init(self):
+        self.update()
+        self.active = 0
+        self.lcd.set_color(*self.color)
+        self.render(True)
+        
+    def update(self):
         ipre    = re.compile(r'inet addr:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
         essidre = re.compile(r'ESSID:"([^\"]*)"')
         ifconfig_out = subprocess.check_output(["ifconfig","wlan0"])
@@ -22,22 +27,14 @@ class NetworkPrinter(Printer):
         if essidmatch:
             essid = essidmatch.groups()[0]
             
-        ipheader = "IP"
-        essidheader = "ESSID"
+        page = Page()
+        ipheader = "IP "
+        page.add(Text(ipheader))
+        width = self.cols-len(ipheader)
+        page.add(ScrollText(ip,width=width))
+        essidheader = "ESSID "
+        page.add(Text(essidheader))
+        width = self.cols-len(essidheader)
+        page.add(ScrollText(essid,width=width))
         
-        self.lcd.set_cursor(0,0)
-        self.lcd.message( ipheader.ljust(self.cols))
-        self.lcd.set_cursor(0,1)
-        self.lcd.message( essidheader.ljust(self.cols))
-    
-        ipstart = len(ipheader)+1
-        essidstart = len(essidheader)+1
-        ipmaxw    = self.cols - ipstart
-        essidmaxw = self.cols - essidstart
-    
-        self.rowtext = [
-            ScrollText(ip,ipmaxw),
-            ScrollText(essid,essidmaxw),
-            ]
-        self.lcd.set_color(*colors['red'])
-        self.rowidx = 0
+        self.pages = [ page ]

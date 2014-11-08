@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import argparse, os, sys
+import os, sys
 
 from musicpi_lcd.lcd         import LCD
 from musicpi_lcd.printer_net import NetworkPrinter
@@ -48,23 +48,77 @@ def detach():
     os.dup2(so.fileno(), sys.stdout.fileno())
     os.dup2(se.fileno(), sys.stderr.fileno())
 
-def parseCommandLine():
-    ret = {}
-    parser = argparse.ArgumentParser(
-        description='musicpi-cd')
-    parser.add_argument( '-d', '--daemon',
-                         help='run as daemon', action="store_true")
-    args = parser.parse_args()
-    
-    # detach immediately if run as daemon
-    if args.daemon: detach()
-    
-    ret['daemon'] = args.daemon
+def checkIfRoot():
+    if not os.geteuid() == 0:
+        return False
+    return True
 
-    return ret
+def checkIfRunning(name, kill=False):
+    pidfile = "/var/run/%s.pid" % name
+    if not os.path.exists( pidfile):
+        return False
+    f = open(pidfile)
+    oldpid = int(f.readline().strip())
+    f.close()
+
+    cmdlinefile = os.path.join('/proc',str(oldpid),'cmdline')
+    if not os.path.exists( cmdlinefile):
+        return False
+    f = open(cmdlinefile)
+    args = f.readline().strip().split('\0')
+    f.close()
+    if len(args) > 1 and not args[0].endswith(name):
+        if not args[1].endswith(name):
+            return False
+
+    if kill:
+        try:
+            import signal, time
+            os.kill(oldpid, signal.SIGTERM)
+            time.sleep(1)
+            os.kill(oldpid, signal.SIGKILL)
+        except:
+            pass
+        return False
+    
+    return True
+    
+def createPIDFile(name):
+    pidfile = '/var/run/%s.pid' % name 
+    f = open(pidfile, 'w')
+    print>>f, os.getpid()
+    f.close()
+    import atexit
+    atexit.register(lambda: os.path.exists(pidfile) and os.remove(pidfile))
 
 def main():
-    cmdargs = parseCommandLine()
+    name = 'musicpi-lcd'
+    
+    import argparse
+    parser = argparse.ArgumentParser(
+        description=name)
+    parser.add_argument( '-d', '--daemon',
+                         help='run as daemon', action="store_true")
+    parser.add_argument( '-k', '--kill-running',
+                         help='kill if running', action="store_true")
+    parser.add_argument( '-t', '--timeout', type=float, default=10,
+                         help='display timeout in seconds (default: 10s)')
+    parser.add_argument( '-a', '--autochange', type=float, default=0,
+                         help='display cycle time in seconds (default: 0s)')
+    parser.add_argument( '-l', '--ticklength', type=float, default=0.5,
+                         help='display refresh time in seconds (default: 0.5s)')
+    cmdargs = parser.parse_args()
+
+    if not checkIfRoot():
+        print "Run as root"
+        sys.exit(1)
+        
+    if checkIfRunning(name, kill=cmdargs.kill_running):
+        print "Already running, exiting"
+        sys.exit(0)
+
+    if cmdargs.daemon: detach()
+    createPIDFile(name)
     
     lcd = LCD()
     cols = 16
@@ -76,13 +130,13 @@ def main():
         'cols': cols,
         'rows':  rows,
         'ticklength': ticklength,
-        'autochange': 0,
-        'timeout': 0,
+        'autochange': cmdargs.autochange,
+        'timeout':    cmdargs.timeout,
         }
     printers  = [
-        MPDPrinter(**args),
-        GPSPrinter(**args),
-        NetworkPrinter(**args),
+        MPDPrinter    (color=colors['green'], **args),
+        GPSPrinter    (color=colors['blue'],  **args),
+        NetworkPrinter(color=colors['red'],   **args),
         ]
     loop = Loop(printers=printers, **args)
     try:
@@ -90,6 +144,8 @@ def main():
             loop.iterate()
     except KeyboardInterrupt:
         pass
-
+    
+    lcd.off()
+    
 if __name__ == '__main__':
     main()

@@ -36,8 +36,7 @@ class LCD(Adafruit_RGBCharLCD):
         self.clear()
 
     def __del__(self):
-        self.clear()
-        self.set_backlight(0)
+        self.off()
 
     def is_pressed(self, button):
         """Return True if the provided button is pressed, False otherwise."""
@@ -45,3 +44,7 @@ class LCD(Adafruit_RGBCharLCD):
             raise ValueError('Unknown button, must be SELECT, RIGHT, DOWN, UP, or LEFT.')
         return self._mcp.input(button) == GPIO.LOW
 
+    def off(self):
+        self.clear()
+        self.set_backlight(0)
+        
