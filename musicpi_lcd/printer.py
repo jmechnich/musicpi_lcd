@@ -1,6 +1,7 @@
 import Adafruit_CharLCD as LCD
 
 from musicpi_lcd.util import buttons, colors
+from musicpi_lcd.text import *
 
 class Printer(object):
     def __init__(self,**kwargs):
@@ -14,6 +15,12 @@ class Printer(object):
         self.btncounter = dict(zip(buttons,[0]*len(buttons)))
         self.longpress = 3
         
+    def set_background(self):
+        self.lcd.set_color(*self.color)
+    
+    def stop(self):
+        pass
+    
     def iterate(self):
         if self.tickcounter == 0:
             self.render()

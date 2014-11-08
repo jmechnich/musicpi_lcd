@@ -101,10 +101,10 @@ def main():
                          help='run as daemon', action="store_true")
     parser.add_argument( '-k', '--kill-running',
                          help='kill if running', action="store_true")
-    parser.add_argument( '-t', '--timeout', type=float, default=10,
-                         help='display timeout in seconds (default: 10s)')
+    parser.add_argument( '-t', '--timeout', type=float, default=30,
+                         help='display timeout in ticks, disable with 0 (default: 30)')
     parser.add_argument( '-a', '--autochange', type=float, default=0,
-                         help='display cycle time in seconds (default: 0s)')
+                         help='display cycle time in ticks, disable with 0 (default: disabled)')
     parser.add_argument( '-l', '--ticklength', type=float, default=0.5,
                          help='display refresh time in seconds (default: 0.5s)')
     cmdargs = parser.parse_args()
@@ -144,7 +144,9 @@ def main():
             loop.iterate()
     except KeyboardInterrupt:
         pass
-    
+
+    for p in printers:
+        p.stop()
     lcd.off()
     
 if __name__ == '__main__':

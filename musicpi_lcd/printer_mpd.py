@@ -15,15 +15,18 @@ class MPDThread(Thread):
         self.port = parent.port
         self.parent = parent
         super(MPDThread,self).__init__()
-        self.setDaemon(True)
 
     def run(self):
+        self.do_iterate = True
         self.mpd.connect(self.host,self.port)
-        while True:
+        while self.do_iterate:
             self.subsys = self.mpd.idle()
             self.parent.append_changed(self.subsys)
-        print "Disconnecting"
         self.mpd.disconnect()
+        
+    def stop(self):
+        self.do_iterate = False
+        self.mpd.noidle()
 
 def strtime(seconds):
     seconds = float(seconds)
@@ -49,10 +52,14 @@ class MPDPrinter(Printer):
         self.init_page()
         self.update_changed(update_all=True)
         self.lock = Lock()
-        self.mpdthread = MPDThread(self)
-        self.mpdthread.start()
+        self.thread = MPDThread(self)
+        self.thread.start()
         self.changed = []
-
+    
+    def stop(self):
+        self.thread.stop()
+        self.thread.join()
+        
     def init_page(self):
         self.pages = []
 

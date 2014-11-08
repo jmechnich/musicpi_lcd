@@ -35,6 +35,23 @@ class Page(object):
                 #print "Rendering '%s'" % str(text)
                 message_func( str(text))
 
+    def add_line(self,text,header=None):
+        width = self.cols
+        if header:
+            headertext = Text(header+" ") 
+            self.add(headertext)
+            width -= headertext.width
+        text.width = width
+        self.add(text)
+
+    def add_scroll_line(self,rawtext,header=None):
+        width = self.cols
+        if header:
+            headertext = Text(header+" ") 
+            self.add(headertext)
+            width -= headertext.width
+        self.add(ScrollText(rawtext,width))
+
 class Text(object):
     def __init__(self, text="", width=-1):
         self.text  = text
