@@ -3,7 +3,7 @@
 import os, sys
 
 from musicpi_lcd.lcd         import LCD, buttons, colors
-from musicpi_lcd.printer_net import NetworkPrinter
+from musicpi_lcd.printer_sys import SystemPrinter
 from musicpi_lcd.printer_mpd import MPDPrinter
 from musicpi_lcd.printer_gps import GPSPrinter
 from musicpi_lcd.loop        import Loop
@@ -140,9 +140,9 @@ def main():
         'debug':      cmdargs.verbose
         }
     printers  = [
-        NetworkPrinter(color=colors['red'],   **args),
-        MPDPrinter    (color=colors['green'], **args),
-        GPSPrinter    (color=colors['blue'],  **args),
+        SystemPrinter(color=colors['red'],   **args),
+        MPDPrinter   (color=colors['green'], **args),
+        GPSPrinter   (color=colors['blue'],  **args),
         ]
 
     def on_exit():

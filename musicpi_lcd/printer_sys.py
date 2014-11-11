@@ -1,11 +1,11 @@
-import time, os, re, subprocess, sys
+import time, os, re, subprocess, sys, psutil
 
 from musicpi_lcd.lcd import LCD
 from musicpi_lcd.printer import Printer
 from musicpi_lcd.text    import *
 
-class NetworkPrinter(Printer):
-    PAGE_WIFI, PAGE_LOAD, PAGE_CTRL = range(3)
+class SystemPrinter(Printer):
+    PAGE_WIFI, PAGE_LOAD, PAGE_STAT, PAGE_CTRL = range(4)
     
     def __init__(self, **kwargs):
         # configurable variables
@@ -13,14 +13,14 @@ class NetworkPrinter(Printer):
         self.drivedir  = '/media/usb0'
         self.updatetimeout = 15
         self.gpsuser   = 'gps'
-        super(NetworkPrinter,self).__init__(**kwargs)
+        super(SystemPrinter,self).__init__(**kwargs)
         
         # internal variables
         self.ipre    = re.compile(r'inet addr:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
         self.essidre = re.compile(r'ESSID:"([^\"]*)"')
 
     def init_layout(self):
-        super(NetworkPrinter,self).init_layout()
+        super(SystemPrinter,self).init_layout()
 
         page = Page(self.lcd,idx=self.PAGE_WIFI)
         self.iptext    = page.add_scroll_line(header='IP')
@@ -32,6 +32,13 @@ class NetworkPrinter(Printer):
         self.loadtext  = page.add_line()
         self.pages.append(page)
         
+        page = Page(self.lcd,idx=self.PAGE_STAT)
+        page.add_line(Text('Daemon XNJ MSG'))
+        page.add(Text('Status '))
+        self.logger_status = page.add(Text(width=4))
+        self.daemon_status = page.add(Text(width=5))
+        self.pages.append(page)
+
         page = Page(self.lcd,idx=self.PAGE_CTRL)
         page.add(CycleText(
                 [ chr(LCD.SYM_RIGHT) + 'Restart wifi',
@@ -55,18 +62,18 @@ class NetworkPrinter(Printer):
     def render(self,force=False):
         self.updatecounter = (self.updatecounter+1)%self.updatetimeout
         if self.updatecounter == 0:
-            self.update_changed(['load', 'date'])
+            self.update_changed(['load', 'date', 'daemon'])
 
-        super(NetworkPrinter,self).render(force)
+        super(SystemPrinter,self).render(force)
 
     def update_changed(self, changed_list=[], update_all=False):
         if update_all:
-            changed = ['net', 'date', 'load']
+            changed = ['net', 'date', 'load', 'daemon']
         else:
             changed = changed_list
 
+        if self.debug: print type(self).__name__, 'updating', changed
         for i in changed:
-            if self.debug: print type(self).__name__, 'updating', changed
             if i == 'net':
                 ifconfig_out = subprocess.check_output(["ifconfig",self.device])
                 iwconfig_out = subprocess.check_output(["iwconfig",self.device])
@@ -90,9 +97,32 @@ class NetworkPrinter(Printer):
                 output = ' '.join( subprocess.check_output( "uptime").split()[-3:])
                 if output != self.loadtext.text:
                     self.loadtext.setText(output)
-        
+            elif i == 'daemon':
+                gpxlogger, gpspipe, start_wlan = 0, 0, 0
+                stat_mpd, stat_shairport, stat_gmediarender = 0, 0, 0 
+                for p in psutil.get_process_list():
+                    if p.username == 'gps':
+                        if p.name == 'gpxlogger':
+                            gpxlogger = 1
+                            continue
+                        elif p.name == 'gpspipe':
+                            gpspipe = 1
+                            continue
+                        elif p.name == 'python' and p.cmdline[1].find('scan_wlan') != -1:
+                            start_wlan = 1
+                    elif p.username == 'mpd':
+                        if p.name.endswith('mpd'):
+                            stat_mpd = 1
+                    else:
+                        if p.name.endswith('shairport'):
+                            stat_shairport = 1
+                        elif p.name.endswith('gmediarender'):
+                            stat_gmediarender = 1
+                            
+                self.logger_status.setText("".join( ['*' if d else ' ' for d in [gpxlogger, gpspipe, start_wlan]] ))
+                self.daemon_status.setText("".join( ['*' if d else ' ' for d in [stat_mpd, stat_shairport, stat_gmediarender]] ))
+                
     def update(self):
-        if self.debug: print type(self).__name__ + " update"
         self.update_changed(update_all=True)
             
     def restart_wifi(self):

@@ -134,8 +134,8 @@ class MPDPrinter(Printer):
         current = self._mpd.currentsong()
         self._mpd.disconnect()
         
+        if self.debug: print type(self).__name__, 'updating', changed
         for i in changed:
-            if self.debug: print type(self).__name__, 'updating', i
             if i == 'player':
                 songtext = "%s - %s" % (current.get('artist', '<Unknown Artist>'),
                                         current.get('title',  '<Unknown Title>'))
