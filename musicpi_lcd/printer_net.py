@@ -49,6 +49,7 @@ class NetworkPrinter(Printer):
         self.updatecounter = 0
         self.update()
         self.set_background()
+        self.active = self.PAGE_WIFI
         self.render(True)
         
     def render(self,force=False):

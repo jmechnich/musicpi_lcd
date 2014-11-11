@@ -109,7 +109,7 @@ def main():
                          help='number of columns (default: %(default)s)')
     parser.add_argument( '-r', '--rows',       metavar='ROWS', type=int,   default=rows,
                          help='number of rows (default: %(default)s)')
-    parser.add_argument( '-t', '--timeout',    metavar='TICKS', type=int, default=round(15/ticklength) if 0 else 0,
+    parser.add_argument( '-t', '--timeout',    metavar='TICKS', type=int, default=round(15/ticklength) if 1 else 0,
                          help='display timeout in ticks, disable with 0 (default: %(default)s)')
     parser.add_argument( '-a', '--autochange', metavar='TICKS', type=int, default=0,
                          help='display cycle time in ticks, disable with 0 (default: %(default)s)')
