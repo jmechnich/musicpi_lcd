@@ -1,57 +1,3 @@
-class Page(object):
-    def __init__(self, cols=16, rows=2):
-        self.cols = cols
-        self.rows = rows
-        self.items = []
-        self.pos = 0
-    
-    def pos_col(self):
-        return self.pos%self.cols
-
-    def pos_row(self):
-        return self.pos/self.cols
-    
-    def add(self, text):
-        if self.pos >= self.cols*self.rows:
-            print "Warning: position larger than page size"
-            print self.pos_col(), self.pos_row(), text.__dict__
-        self.items += [ (self.pos, text) ]
-        #print "Adding new item at", self.pos_col(), self.pos_row(), text
-        self.pos += text.width
-
-    def newline(self):
-        col = self.pos_col()
-        if col == 0:
-            return
-        self.pos = self.pos + self.cols-col
-    
-    def render(self, force=False, set_cursor_func=None, message_func=None):
-        for pos, text in self.items:
-            self.pos = pos
-            if set_cursor_func:
-                #print "Moving cursor to", self.pos_col(),self.pos_row()
-                set_cursor_func(self.pos_col(),self.pos_row())
-            if message_func and (text.update() or force):
-                #print "Rendering '%s'" % str(text)
-                message_func( str(text))
-
-    def add_line(self,text,header=None):
-        width = self.cols
-        if header:
-            headertext = Text(header+" ") 
-            self.add(headertext)
-            width -= headertext.width
-        text.width = width
-        self.add(text)
-
-    def add_scroll_line(self,rawtext,header=None):
-        width = self.cols
-        if header:
-            headertext = Text(header+" ") 
-            self.add(headertext)
-            width -= headertext.width
-        self.add(ScrollText(rawtext,width))
-
 class Text(object):
     def __init__(self, text="", width=-1):
         self.text  = text
@@ -123,3 +69,58 @@ class ScrollText(Text):
         self.looppos += self.loop[self.counter]
         self.counter = (self.counter+1)%len(self.loop)
         return True
+
+class Page(object):
+    def __init__(self, lcd, idx=-1):
+        self.lcd = lcd
+        self.idx  = idx
+        self.cols = self.lcd._cols
+        self.rows = self.lcd._lines
+        
+        self.items = []
+        self.pos = 0
+    
+    def pos_col(self):
+        return self.pos%self.cols
+
+    def pos_row(self):
+        return self.pos/self.cols
+    
+    def add(self, text):
+        if self.pos >= self.cols*self.rows:
+            print "Warning: position larger than page size"
+            print self.pos_col(), self.pos_row(), text.__dict__
+        self.items += [ (self.pos, text) ]
+        #print "Adding new item at", self.pos_col(), self.pos_row(), text
+        self.pos += text.width
+        return text
+
+    def newline(self):
+        col = self.pos_col()
+        if col == 0:
+            return
+        self.pos = self.pos + self.cols-col
+    
+    def render(self, force=False):
+        for pos, text in self.items:
+            self.pos = pos
+            #print "Moving cursor to", self.pos_col(),self.pos_row()
+            self.lcd.set_cursor(self.pos_col(),self.pos_row())
+            if (text.update() or force):
+                #print "Rendering '%s'" % str(text)
+                self.lcd.message( str(text))
+
+    def add_line(self,text=None,header=None):
+        width = self.cols
+        if not text:
+            text = Text(width=width)
+        if header:
+            headertext = Text(header+" ") 
+            self.add(headertext)
+            width -= headertext.width
+        text.width = width
+        self.add(text)
+        return text
+
+    def add_scroll_line(self,rawtext='',header=None):
+        return self.add_line(ScrollText(rawtext), header)

@@ -1,7 +1,7 @@
 from musicpi_lcd.printer import Printer
 from musicpi_lcd.text    import *
 
-from threading import Lock, Thread
+from threading import Lock, Thread, Event
 
 import dateutil.parser
 from   dateutil.tz import tzlocal
@@ -11,12 +11,15 @@ import gps, time
 class GPSThread(Thread):
     def __init__(self,parent):
         super(GPSThread,self).__init__()
-        self.parent = parent
+        self._parent  = parent
+        self._lock    = Lock()
+        self._stop    = Event()
+        self._gpsinfo = {}
         
     def run(self):
-        self.do_iterate = True
+        self._stop.clear()
         session = gps.gps(mode=gps.WATCH_ENABLE)
-        while self.do_iterate:
+        while not self._stop.is_set():
             gpsinfo = None
             maxtries = 10
             try:
@@ -29,82 +32,93 @@ class GPSThread(Thread):
             except StopIteration:
                 pass
             if gpsinfo:
-                self.parent.set_gpsinfo(gpsinfo)
-            time.sleep(1)
+                self.set_gpsinfo(gpsinfo)
+            if self._stop.wait(1):
+                break
         session.close()
-        
+
+    def stop(self):
+        self._stop.set()
+
+    def get_gpsinfo(self):
+        with self._lock:
+            ret = dict(self._gpsinfo)
+        return ret
+    
+    def set_gpsinfo(self, gpsinfo={}):
+        with self._lock:
+            old = dict(self._gpsinfo)
+            self._gpsinfo = gpsinfo
+        return old
+
 class GPSPrinter(Printer):
+    PAGE_POS, PAGE_SPEED, PAGE_ALT, PAGE_TIME = xrange(4)
+    
     def __init__(self,**kwargs):
         super(GPSPrinter,self).__init__(**kwargs)
-        self.active = 0
-        self.gpsinfo = {}
-        self.init_page()
-        self.thread = GPSThread(self)
-        self.lock = Lock()
-        self.thread.start()
         
-    def stop(self):
-        self.thread.do_iterate = False
-        self.thread.join()
+        # internal variables
+        self._thread = None
         
-    def init_page(self):
-        self.pages = []
-        page = Page()
-        self.lon = ScrollText()
-        page.add_line(self.lon, header="Lon")
-        self.lat = ScrollText()
-        page.add_line(self.lat, header="Lat")
+    def init_layout(self):
+        super(GPSPrinter,self).init_layout()
+
+        page = Page(self.lcd,idx=self.PAGE_POS)
+        self.lon = page.add_scroll_line(header="Lon")
+        self.lat = page.add_scroll_line(header="Lat")
         self.pages.append(page)
 
-        page = Page()
-        self.speed = ScrollText()
-        page.add_line(self.speed, header="Speed")
-        self.track = ScrollText()
-        page.add_line(self.track, header="Track")
+        page = Page(self.lcd,idx=self.PAGE_SPEED)
+        self.speed = page.add_scroll_line(header="Speed")
+        self.track = page.add_scroll_line(header="Track")
         self.pages.append(page)
 
-        page = Page()
-        self.alt = ScrollText()
-        page.add_line(self.alt, header="Alt")
+        page = Page(self.lcd,idx=self.PAGE_ALT)
+        self.alt = page.add_scroll_line(header="Alt")
         page.add_line(Text(width=self.cols))
         self.pages.append(page)
 
-        page = Page()
-        self.time = ScrollText()
-        page.add_line(self.time, header="Time")
-        self.date = ScrollText()
-        page.add_line(self.date, header="Date")
+        page = Page(self.lcd,idx=self.PAGE_TIME)
+        self.time = page.add_scroll_line(header="Time")
+        self.date = page.add_scroll_line(header="Date")
         self.pages.append(page)
+        
+        self.active = self.PAGE_POS
 
+    def __del__(self):
+        self.stop()
+    
+    def stop(self):
+        if not self._thread:
+            return
+        if not self._thread.is_alive():
+            if self.debug: print type(self).__name__, ": Thread not running"
+        if self.debug: print type(self).__name__, ": Stopping thread"
+        self._thread.stop()
+        self._thread.join()
+        self._thread = None
+        if self.debug: print type(self).__name__, ": Thread stopped"
+        
     def init(self):
+        if not self._thread:
+            self._thread = GPSThread(self)
+            self._thread.start()
         self.update()
         self.lcd.set_color(*self.color)
         self.render(True)
         
-    def get_gpsinfo(self):
-        self.lock.acquire()
-        ret = dict(self.gpsinfo)
-        self.lock.release()
-        return ret
-    
-    def set_gpsinfo(self, gpsinfo={}):
-        self.lock.acquire()
-        old = dict(self.gpsinfo)
-        self.gpsinfo = gpsinfo
-        self.lock.release()
-        return old
-
     def render(self,force=True):
         self.update()
-        super(GPSPrinter,self).render(force=True)
+        super(GPSPrinter,self).render(force)
     
     def update(self):
-        gpsinfo = self.set_gpsinfo()
+        if self.debug: print type(self).__name__, 'updating'
+        gpsinfo = self._thread.get_gpsinfo()
         if not len(gpsinfo):
             return
         mode = gpsinfo.get('mode', 1)
         if mode > 1:
-            gpstime   = gpsinfo.get('time', None)
+            gpstime = gpsinfo.get('time', None)
             self.lon.setText(("%f" % gpsinfo.get('lon', 0.0)).rjust(self.lon.width))
             self.lat.setText(("%f" % gpsinfo.get('lat', 0.0)).rjust(self.lat.width))
             self.speed.setText(("%d m/s" % gpsinfo.get('speed', 0)).rjust(self.speed.width))

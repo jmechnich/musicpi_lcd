@@ -2,11 +2,10 @@
 
 import os, sys
 
-from musicpi_lcd.lcd         import LCD
+from musicpi_lcd.lcd         import LCD, buttons, colors
 from musicpi_lcd.printer_net import NetworkPrinter
 from musicpi_lcd.printer_mpd import MPDPrinter
 from musicpi_lcd.printer_gps import GPSPrinter
-from musicpi_lcd.util        import colors, buttons
 from musicpi_lcd.loop        import Loop
 
 def detach():
@@ -93,20 +92,29 @@ def createPIDFile(name):
 
 def main():
     name = 'musicpi-lcd'
+    ticklength = 0.1
+    cols = 16
+    rows = 2
     
     import argparse
     parser = argparse.ArgumentParser(
         description=name)
     parser.add_argument( '-d', '--daemon',
-                         help='run as daemon', action="store_true")
+                         help='run as daemon',         action="store_true")
+    parser.add_argument( '-v', '--verbose',
+                         help='enable verbose output', action="store_true")
     parser.add_argument( '-k', '--kill-running',
-                         help='kill if running', action="store_true")
-    parser.add_argument( '-t', '--timeout', type=float, default=30,
-                         help='display timeout in ticks, disable with 0 (default: 30)')
-    parser.add_argument( '-a', '--autochange', type=float, default=0,
-                         help='display cycle time in ticks, disable with 0 (default: disabled)')
-    parser.add_argument( '-l', '--ticklength', type=float, default=0.5,
-                         help='display refresh time in seconds (default: 0.5s)')
+                         help='kill if running',       action="store_true")
+    parser.add_argument( '-c', '--cols',       metavar='COLS', type=int,   default=cols,
+                         help='number of columns (default: %(default)s)')
+    parser.add_argument( '-r', '--rows',       metavar='ROWS', type=int,   default=rows,
+                         help='number of rows (default: %(default)s)')
+    parser.add_argument( '-t', '--timeout',    metavar='TICKS', type=int, default=round(15/ticklength) if 0 else 0,
+                         help='display timeout in ticks, disable with 0 (default: %(default)s)')
+    parser.add_argument( '-a', '--autochange', metavar='TICKS', type=int, default=0,
+                         help='display cycle time in ticks, disable with 0 (default: %(default)s)')
+    parser.add_argument( '-l', '--ticklength', metavar='SECS', type=float, default=ticklength,
+                         help='display refresh time in seconds (default: %(default)s s)')
     cmdargs = parser.parse_args()
 
     if not checkIfRoot():
@@ -121,23 +129,37 @@ def main():
     createPIDFile(name)
     
     lcd = LCD()
-    cols = 16
-    rows = 2
-    ticklength = 0.5
     
     args = {
-        'lcd':  lcd,
-        'cols': cols,
-        'rows':  rows,
-        'ticklength': ticklength,
+        'lcd':        lcd,
+        'cols':       cmdargs.cols,
+        'rows':       cmdargs.rows,
+        'ticklength': cmdargs.ticklength,
         'autochange': cmdargs.autochange,
         'timeout':    cmdargs.timeout,
+        'debug':      cmdargs.verbose
         }
     printers  = [
+        NetworkPrinter(color=colors['red'],   **args),
         MPDPrinter    (color=colors['green'], **args),
         GPSPrinter    (color=colors['blue'],  **args),
-        NetworkPrinter(color=colors['red'],   **args),
         ]
+
+    def on_exit():
+        for p in printers:
+            if cmdargs.verbose: print "Stopping", type(p).__name__
+            p.stop()
+            if cmdargs.verbose: print "Stopped ", type(p).__name__
+        lcd.off()
+    
+    import atexit
+    atexit.register(on_exit)
+
+    if cmdargs.verbose:
+        for p in printers:
+            print "Using", type(p).__name__
+        print "Starting loop"
+        
     loop = Loop(printers=printers, **args)
     try:
         while True:
@@ -145,9 +167,5 @@ def main():
     except KeyboardInterrupt:
         pass
 
-    for p in printers:
-        p.stop()
-    lcd.off()
-    
 if __name__ == '__main__':
     main()
