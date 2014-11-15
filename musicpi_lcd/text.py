@@ -9,8 +9,8 @@ class Text(object):
         return self.text[:self.width].ljust(self.width)
 
     def setText(self,text):
+        self.changed = (text != self.text)
         self.text = text
-        self.changed = True
         
     def update(self):
         ret = self.changed
@@ -19,7 +19,7 @@ class Text(object):
         return ret
     
 class CycleText(Text):
-    def __init__(self, textlist=[], width=-1,initial=0, delay=2):
+    def __init__(self, textlist=[], width=-1,initial=0, delay=5):
         self.textlist = textlist
         self.counter  = initial
         self.delay    = delay
@@ -50,14 +50,17 @@ class CycleText(Text):
 
 
 class ScrollText(Text):
-    def __init__(self,scrolltext="",width=-1,wait=1,inc=1):
+    def __init__(self,scrolltext="",width=-1,wait=5,inc=1):
+        self.scrolltext = None
+        if width < 0: width = len(scrolltext)
         self.wait = wait
         self.inc  = inc
-        if width < 0: width = len(scrolltext)
         super(ScrollText,self).__init__(width=width)
         self.setText(scrolltext)
     
     def setText(self, text):
+        if text == self.scrolltext:
+            return
         self.scrolltext = text
         dx = max(0,len(self.scrolltext)-self.width)
         self.loop    = [0]*self.wait + [self.inc]*dx + [0]*self.wait + [-self.inc]*dx
@@ -65,10 +68,14 @@ class ScrollText(Text):
         self.looppos = 0
         
     def update(self):
-        self.text = self.scrolltext[self.looppos:self.looppos+self.width].ljust(self.width)
+        ret = False
+        text = self.scrolltext[self.looppos:self.looppos+self.width].ljust(self.width)
+        if self.text != text:
+            self.text = text
+            ret = True
         self.looppos += self.loop[self.counter]
         self.counter = (self.counter+1)%len(self.loop)
-        return True
+        return ret
 
 class Page(object):
     def __init__(self, lcd, idx=-1):
@@ -102,13 +109,16 @@ class Page(object):
         self.pos = self.pos + self.cols-col
     
     def render(self, force=False):
+        was_updated = False
         for pos, text in self.items:
-            self.pos = pos
-            #print "Moving cursor to", self.pos_col(),self.pos_row()
-            self.lcd.set_cursor(self.pos_col(),self.pos_row())
             if (text.update() or force):
-                #print "Rendering '%s'" % str(text)
+                self.pos = pos
+                #print "Moving cursor to", self.pos_col(),self.pos_row()
+                self.lcd.set_cursor(self.pos_col(),self.pos_row())
+                #print "Rendering %s '%s' at %d, %d" % (type(text).__name__, str(text), self.pos_col(), self.pos_row())
                 self.lcd.message( str(text))
+                was_updated = True
+        return was_updated
 
     def add_line(self,text=None,header=None):
         width = self.cols

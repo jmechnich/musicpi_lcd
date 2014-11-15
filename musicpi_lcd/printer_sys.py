@@ -5,16 +5,22 @@ from musicpi_lcd.printer import Printer
 from musicpi_lcd.text    import *
 
 class SystemPrinter(Printer):
-    PAGE_WIFI, PAGE_LOAD, PAGE_STAT, PAGE_CTRL = range(4)
     
     def __init__(self, **kwargs):
+        self.PAGES = [ 'WIFI', 'LOAD', 'STAT', 'CTRL' ]
         # configurable variables
         self.device    = 'wlan0'
         self.drivedir  = '/media/usb0'
         self.updatetimeout = 15
         self.gpsuser   = 'gps'
         super(SystemPrinter,self).__init__(**kwargs)
-        
+        self.TASKS = [ 'net', 'load', 'date', 'daemon' ]
+        self.DEPS  = {
+            self.PAGE.WIFI: ['net'],
+            self.PAGE.LOAD: ['load','date'],
+            self.PAGE.STAT: ['daemon'],
+            self.PAGE.CTRL: [],
+            }
         # internal variables
         self.ipre    = re.compile(r'inet addr:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
         self.essidre = re.compile(r'ESSID:"([^\"]*)"')
@@ -22,24 +28,24 @@ class SystemPrinter(Printer):
     def init_layout(self):
         super(SystemPrinter,self).init_layout()
 
-        page = Page(self.lcd,idx=self.PAGE_WIFI)
+        page = Page(self.lcd,idx=self.PAGE.WIFI)
         self.iptext    = page.add_scroll_line(header='IP')
         self.essidtext = page.add_scroll_line(header='ESSID')
         self.pages.append(page)
 
-        page = Page(self.lcd,idx=self.PAGE_LOAD)
+        page = Page(self.lcd,idx=self.PAGE.LOAD)
         self.timetext  = page.add_line()
         self.loadtext  = page.add_line()
         self.pages.append(page)
         
-        page = Page(self.lcd,idx=self.PAGE_STAT)
+        page = Page(self.lcd,idx=self.PAGE.STAT)
         page.add_line(Text('Daemon XNJ MSG'))
         page.add(Text('Status '))
         self.logger_status = page.add(Text(width=4))
         self.daemon_status = page.add(Text(width=5))
         self.pages.append(page)
 
-        page = Page(self.lcd,idx=self.PAGE_CTRL)
+        page = Page(self.lcd,idx=self.PAGE.CTRL)
         page.add(CycleText(
                 [ chr(LCD.SYM_RIGHT) + 'Restart wifi',
                   chr(LCD.SYM_UP)    + 'Sync USB drive', ],
@@ -50,29 +56,28 @@ class SystemPrinter(Printer):
                 width=self.cols))
         self.pages.append(page)
         
-        self.active = self.PAGE_WIFI
+        self.set_active(self.PAGE.WIFI)
         
     def init(self):
         self.updatecounter = 0
-        self.update()
         self.set_background()
-        self.active = self.PAGE_WIFI
+        self.set_active(self.PAGE.WIFI)
         self.render(True)
         
     def render(self,force=False):
         self.updatecounter = (self.updatecounter+1)%self.updatetimeout
+        if force:
+            self.updatecounter = 0
         if self.updatecounter == 0:
-            self.update_changed(['load', 'date', 'daemon'])
-
+            self.update(self.DEPS[self.active])
+            
         super(SystemPrinter,self).render(force)
 
-    def update_changed(self, changed_list=[], update_all=False):
-        if update_all:
-            changed = ['net', 'date', 'load', 'daemon']
-        else:
-            changed = changed_list
-
-        if self.debug: print type(self).__name__, 'updating', changed
+    def update(self, changed=[]):
+        if not len(changed):
+            return
+        
+        self.logger.debug('%s updating %s' % (type(self).__name__, str(changed)))
         for i in changed:
             if i == 'net':
                 ifconfig_out = subprocess.check_output(["ifconfig",self.device])
@@ -82,7 +87,7 @@ class SystemPrinter(Printer):
                 ip = "None"
                 if ipmatch:
                     ip = ipmatch.groups()[0]
-                self.iptext.setText(ip)
+                self.iptext.setText(ip.rjust(self.iptext.width))
                     
                 essidmatch = re.search( self.essidre, iwconfig_out)
                 essid = ""
@@ -101,84 +106,91 @@ class SystemPrinter(Printer):
                 gpxlogger, gpspipe, start_wlan = 0, 0, 0
                 stat_mpd, stat_shairport, stat_gmediarender = 0, 0, 0 
                 for p in psutil.get_process_list():
-                    if p.username == 'gps':
-                        if p.name == 'gpxlogger':
-                            gpxlogger = 1
-                            continue
-                        elif p.name == 'gpspipe':
-                            gpspipe = 1
-                            continue
-                        elif p.name == 'python' and p.cmdline[1].find('scan_wlan') != -1:
-                            start_wlan = 1
-                    elif p.username == 'mpd':
-                        if p.name.endswith('mpd'):
-                            stat_mpd = 1
-                    else:
-                        if p.name.endswith('shairport'):
-                            stat_shairport = 1
-                        elif p.name.endswith('gmediarender'):
-                            stat_gmediarender = 1
-                            
+                    try:
+                        if p.username == 'gps':
+                            if p.name == 'gpxlogger':
+                                gpxlogger = 1
+                                continue
+                            elif p.name == 'gpspipe':
+                                gpspipe = 1
+                                continue
+                            elif p.name == 'python' and p.cmdline[1].find('scan_wlan') != -1:
+                                start_wlan = 1
+                        elif p.username == 'mpd':
+                            if p.name.endswith('mpd'):
+                                stat_mpd = 1
+                        else:
+                            if p.name.endswith('shairport'):
+                                stat_shairport = 1
+                            elif p.name.endswith('gmediarender'):
+                                stat_gmediarender = 1
+                    except:
+                        continue
                 self.logger_status.setText("".join( ['*' if d else ' ' for d in [gpxlogger, gpspipe, start_wlan]] ))
                 self.daemon_status.setText("".join( ['*' if d else ' ' for d in [stat_mpd, stat_shairport, stat_gmediarender]] ))
                 
-    def update(self):
-        self.update_changed(update_all=True)
-            
     def restart_wifi(self):
         self.show_splash("Restarting " + self.device,timeout=0)
-        output = subprocess.check_output(['ifdown',self.device])
-        if self.debug: print output
-        subprocess.check_output(['ifup'  ,self.device])
-        if self.debug: print output
-        self.update_changed(['net'])
-        self.active = self.PAGE_WIFI
+        self.logger.info("Restarting "+ self.device)
+        try:
+            output = subprocess.check_output(['ifdown',self.device],stderr=subprocess.STDOUT)
+            self.log_output(output)
+            output = subprocess.check_output(['ifup'  ,self.device],stderr=subprocess.STDOUT)
+            self.log_output(output)
+            self.show_splash("Success")
+        except:
+            self.show_splash("Failed")
+        self.update(['net'])
+        self.set_active(self.PAGE.WIFI)
+        self.logger.info("Restarted " + self.device)
         
     def reboot(self):
         self.show_splash("Rebooting")
-        output = subprocess.check_output('shutdown -r now'.split())
-        if self.debug: print output
-        self.lcd.off()
+        self.logger.info("Rebooting")
+        try:
+            output = subprocess.check_output('shutdown -r now'.split(),stderr=subprocess.STDOUT)
+            self.log_output(output)
+            self.exit = True
+        except:
+            self.show_splash("Failed")
     
     def sync_drive(self):
         self.show_splash("Syncing drive\n%s" % self.drivedir, timeout=0)
-        stdout = None
-        stderr = None
-        if self.debug:
-            stdout = sys.stdout
-            stderr = sys.stderr
+        self.logger.info("Syncing drive %s" % self.drivedir)
+
         cmd_mount_rw = "mount -o remount,rw,exec %s" % self.drivedir
         cmd_sync     = os.path.join(self.drivedir, "mediasync_music.sh")
         cmd_mount_ro = "mount -o remount,ro,noexec %s" % self.drivedir
-
-        task_mount_rw = subprocess.Popen(cmd_mount_rw.split(),stdout=stdout,stderr=stderr)
-        task_mount_rw.wait()
         
-        print cmd_sync.split(), self.drivedir
-        task_sync = subprocess.Popen(cmd_sync.split(),cwd=self.drivedir,stdout=stdout,stderr=stderr)
-        task_sync.wait()
-
-        task_mount_ro = subprocess.Popen(cmd_mount_ro.split(),stdout=stdout,stderr=stderr)
-        task_mount_ro.wait()
-        
+        try:
+            output = subprocess.check_output(cmd_mount_rw.split(),stderr=subprocess.STDOUT)
+            self.log_output(output)
+            output = subprocess.check_output(cmd_sync.split(),cwd=self.drivedir,stderr=subprocess.STDOUT)
+            self.log_output(output)
+            output = subprocess.check_output(cmd_mount_ro.split(),stderr=subprocess.STDOUT)
+            self.log_output(output)
+        except:
+            self.show_splash("Failed")
+        self.logger.info("Syncing finished")
+    
     def restart_logging(self):
         self.show_splash("Restart logging")
-        stdout = None
-        stderr = None
-        if self.debug:
-            stdout = sys.stdout
-            stderr = sys.stderr
+        self.logger.info("Restarting GPS logging")
 
         cmd_kill = 'sudo -u %s killall gpxlogger' % self.gpsuser
         cmd_exec = 'sudo /usr/local/sbin/start_gpxlogger.sh'
-         
-        task_kill = subprocess.Popen(cmd_kill.split(),stdout=stdout,stderr=stderr)
-        task_kill.wait()
-        task_exec = subprocess.Popen(cmd_exec.split(),stdout=stdout,stderr=stderr)
-        task_exec.wait()
+        
+        try:
+            output = subprocess.check_output(cmd_kill.split(),stderr=subprocess.STDOUT)
+            self.log_output(output)
+            output = subprocess.check_output(cmd_exec.split(),stderr=subprocess.STDOUT)
+            self.log_output(output)
+        except:
+            self.show_splash("Failed")
+        self.logger.info("GPS logging restarted")
 
     def button_pressed_long(self,btn):
-        if self.active == self.PAGE_CTRL:
+        if self.active == self.PAGE.CTRL:
             if btn == LCD.RIGHT:
                 self.restart_wifi()
             elif btn == LCD.LEFT:

@@ -1,100 +1,16 @@
 #!/usr/bin/env python
 
-import os, sys
+import os, sys, logging
 
 from musicpi_lcd.lcd         import LCD, buttons, colors
 from musicpi_lcd.printer_sys import SystemPrinter
 from musicpi_lcd.printer_mpd import MPDPrinter
 from musicpi_lcd.printer_gps import GPSPrinter
 from musicpi_lcd.loop        import Loop
-
-def detach():
-    stdin  = '/dev/null'
-    stdout = '/dev/null'
-    stderr = '/dev/null'
-    
-    try:
-        pid = os.fork()
-        if pid > 0:
-            # exit first parent
-            sys.exit(0)
-    except OSError, e:
-        sys.stderr.write("fork #1 failed: %d (%s)\n" % (e.errno, e.strerror))
-        sys.exit(1)
-        
-    # decouple from parent environment
-    os.chdir("/")
-    os.setsid()
-    os.umask(0)
-    
-    # do second fork
-    try:
-        pid = os.fork()
-        if pid > 0:
-            # exit from second parent
-            sys.exit(0)
-    except OSError, e:
-        sys.stderr.write("fork #2 failed: %d (%s)\n" % (e.errno, e.strerror))
-        sys.exit(1)
-       
-    # redirect standard file descriptors
-    sys.stdout.flush()
-    sys.stderr.flush()
-    si = file(stdin, 'r')
-    so = file(stdout, 'a+')
-    se = file(stderr, 'a+', 0)
-    os.dup2(si.fileno(), sys.stdin.fileno())
-    os.dup2(so.fileno(), sys.stdout.fileno())
-    os.dup2(se.fileno(), sys.stderr.fileno())
-
-def checkIfRoot():
-    if not os.geteuid() == 0:
-        return False
-    return True
-
-def checkIfRunning(name, kill=False):
-    pidfile = "/var/run/%s.pid" % name
-    if not os.path.exists( pidfile):
-        return False
-    f = open(pidfile)
-    oldpid = int(f.readline().strip())
-    f.close()
-
-    cmdlinefile = os.path.join('/proc',str(oldpid),'cmdline')
-    if not os.path.exists( cmdlinefile):
-        return False
-    f = open(cmdlinefile)
-    args = f.readline().strip().split('\0')
-    f.close()
-    if len(args) > 1 and not args[0].endswith(name):
-        if not args[1].endswith(name):
-            return False
-
-    if kill:
-        try:
-            import signal, time
-            os.kill(oldpid, signal.SIGTERM)
-            time.sleep(1)
-            os.kill(oldpid, signal.SIGKILL)
-        except:
-            pass
-        return False
-    
-    return True
-    
-def createPIDFile(name):
-    pidfile = '/var/run/%s.pid' % name 
-    f = open(pidfile, 'w')
-    print>>f, os.getpid()
-    f.close()
-    import atexit
-    atexit.register(lambda: os.path.exists(pidfile) and os.remove(pidfile))
+from musicpi_lcd.daemon      import detach, check_if_root, check_if_running, create_pid_file, create_logger
 
 def main():
     name = 'musicpi-lcd'
-    ticklength = 0.1
-    cols = 16
-    rows = 2
     
     import argparse
     parser = argparse.ArgumentParser(
@@ -105,67 +21,92 @@ def main():
                          help='enable verbose output', action="store_true")
     parser.add_argument( '-k', '--kill-running',
                          help='kill if running',       action="store_true")
-    parser.add_argument( '-c', '--cols',       metavar='COLS', type=int,   default=cols,
+    parser.add_argument( '-p', '--profile',
+                         help='profile timing',        action="store_true")
+    parser.add_argument( '-c', '--cols',       metavar='COLS', type=int,   default=16,
                          help='number of columns (default: %(default)s)')
-    parser.add_argument( '-r', '--rows',       metavar='ROWS', type=int,   default=rows,
+    parser.add_argument( '-r', '--rows',       metavar='ROWS', type=int,   default=2,
                          help='number of rows (default: %(default)s)')
-    parser.add_argument( '-t', '--timeout',    metavar='TICKS', type=int, default=round(15/ticklength) if 1 else 0,
-                         help='display timeout in ticks, disable with 0 (default: %(default)s)')
-    parser.add_argument( '-a', '--autochange', metavar='TICKS', type=int, default=0,
-                         help='display cycle time in ticks, disable with 0 (default: %(default)s)')
-    parser.add_argument( '-l', '--ticklength', metavar='SECS', type=float, default=ticklength,
+    parser.add_argument( '-t', '--timeout',    metavar='SECS', type=int,   default=15,
+                         help='display timeout in seconds, disable with 0 (default: %(default)s)')
+    parser.add_argument( '-a', '--autochange', metavar='SECS', type=int,   default=0,
+                         help='display cycle time in seconds, disable with 0 (default: %(default)s)')
+    parser.add_argument( '-n', '--ticklength', metavar='SECS', type=float, default=0.1,
                          help='display refresh time in seconds (default: %(default)s s)')
+    parser.add_argument( '-l', '--logfile',    metavar='FILE', type=str,   default=None,
+                         help='logfile name (default: %(default)s)')
     cmdargs = parser.parse_args()
 
-    if not checkIfRoot():
+    if not check_if_root():
         print "Run as root"
         sys.exit(1)
         
-    if checkIfRunning(name, kill=cmdargs.kill_running):
+    if check_if_running(name, kill=cmdargs.kill_running):
         print "Already running, exiting"
         sys.exit(0)
 
-    if cmdargs.daemon: detach()
-    createPIDFile(name)
+    if cmdargs.daemon:
+        detach()
+    create_pid_file(name)
     
+    logger = create_logger(name,logfile=cmdargs.logfile)
+    logger.setLevel(logging.DEBUG if cmdargs.verbose else logging.INFO)
+    
+    if logger.getEffectiveLevel() == logging.DEBUG:
+        logger.debug('Process ID: %d' % os.getpid())
+        logger.debug('Commandline arguments')
+        for k,v in cmdargs.__dict__.items():
+            logger.debug(k.rjust(20) + ": %s" %str(v))
+        
     lcd = LCD()
     
     args = {
-        'lcd':        lcd,
-        'cols':       cmdargs.cols,
-        'rows':       cmdargs.rows,
+        'logger'    : logger,
+        'lcd'       : lcd,
+        'cols'      : cmdargs.cols,
+        'rows'      : cmdargs.rows,
         'ticklength': cmdargs.ticklength,
         'autochange': cmdargs.autochange,
-        'timeout':    cmdargs.timeout,
-        'debug':      cmdargs.verbose
+        'timeout'   : cmdargs.timeout,
+        'profile'   : cmdargs.profile,
         }
+
+    if logger.getEffectiveLevel() == logging.DEBUG:
+        logger.debug('Printer arguments')
+        for k,v in args.items():
+            logger.debug(k.rjust(20) + ": %s" %str(v))
+
     printers  = [
         SystemPrinter(color=colors['red'],   **args),
         MPDPrinter   (color=colors['green'], **args),
         GPSPrinter   (color=colors['blue'],  **args),
         ]
 
-    def on_exit():
+    def cleanup_and_exit():
         for p in printers:
-            if cmdargs.verbose: print "Stopping", type(p).__name__
+            logger.debug("Stopping %s" % type(p).__name__)
             p.stop()
-            if cmdargs.verbose: print "Stopped ", type(p).__name__
+            logger.debug("Stopped  %s" % type(p).__name__)
         lcd.off()
+        logger.info('Exiting')
+        logging.shutdown()
+        sys.exit(0)
+        
+    import signal
+    signal.signal(signal.SIGTERM, lambda x,y: cleanup_and_exit())
     
-    import atexit
-    atexit.register(on_exit)
-
-    if cmdargs.verbose:
-        for p in printers:
-            print "Using", type(p).__name__
-        print "Starting loop"
+    for p in printers:
+        logger.info("Using %s" % type(p).__name__)
+    logger.info("Starting loop")
         
     loop = Loop(printers=printers, **args)
     try:
-        while True:
-            loop.iterate()
+        while loop.iterate():
+            pass
     except KeyboardInterrupt:
         pass
 
+    cleanup_and_exit()
+    
 if __name__ == '__main__':
     main()

@@ -3,43 +3,27 @@ import subprocess
 from musicpi_lcd.lcd     import LCD
 from musicpi_lcd.printer import Printer
 from musicpi_lcd.text    import *
+from musicpi_lcd.thread  import BaseThread as Thread
 
 from mpd import MPDClient
-from threading import Thread, Lock, Event
 
 class MPDThread(Thread):
-    def __init__(self,mpdhost,mpdport):
+    def __init__(self,mpdhost,mpdport,logger):
+        super(MPDThread,self).__init__(logger)
         self.mpd = MPDClient()
         self.host = mpdhost
         self.port = mpdport
-        super(MPDThread,self).__init__()
-        self._changed = []
-        self._lock = Lock()
-        self._stop = Event()
         
     def run(self):
-        self._stop.clear()
-        self.append_changed(['player', 'options', 'mixer', 'update'])
         self.mpd.connect(self.host,self.port)
-        while not self._stop.is_set():
+        while self.iterate():
             self.subsys = self.mpd.idle()
-            self.append_changed(self.subsys)
+            self.set_data(self.subsys)
         self.mpd.disconnect()
         
-    def stop(self):
-        self._stop.set()
+    def stop_iterate(self):
         self.mpd.noidle()
 
-    def append_changed(self,changed):
-        with self._lock:
-            self._changed += changed
-
-    def release_changed(self):
-        with self._lock:
-            old = self._changed
-            self._changed = []
-        return old
-        
 def strtime(seconds):
     seconds = float(seconds)
     minutes = seconds/60
@@ -56,15 +40,18 @@ def strswitch(state):
     return 'on' if state else 'off'
 
 class MPDPrinter(Printer):
-    PAGE_PLAYER, PAGE_OPTIONS = range(2)
-    
     def __init__(self,**kwargs):
+        self.PAGES = ['PLAYER', 'OPTIONS']
         # configurable variables
         self.mpdhost = 'localhost'
         self.mpdport = 6600
 
         super(MPDPrinter,self).__init__(**kwargs)
-        
+        self.TASKS = ['player', 'playlist', 'options', 'mixer', 'update']
+        self.DEPS  = {
+            self.PAGE.PLAYER:  ['player', 'playlist'],
+            self.PAGE.OPTIONS: ['options', 'mixer', 'update'],
+            }
         # internal variables
         self._mpd = MPDClient()
         self._thread = None
@@ -72,7 +59,7 @@ class MPDPrinter(Printer):
     def init_layout(self):
         super(MPDPrinter,self).init_layout()
         
-        page = Page(self.lcd,idx=self.PAGE_PLAYER)
+        page = Page(self.lcd,idx=self.PAGE.PLAYER)
         self.statetext = page.add(Text(width=1))
         self.songtext  = page.add(ScrollText(width=page.cols-1))
         page.newline()
@@ -81,7 +68,7 @@ class MPDPrinter(Printer):
         self.timetext  = page.add(ScrollText(width=page.cols-self.plstext.width))
         self.pages.append(page)
         
-        page = Page(self.lcd,idx=self.PAGE_OPTIONS)
+        page = Page(self.lcd,idx=self.PAGE.OPTIONS)
         self.opttext    = page.add(CycleText(width=11))
         self.volumetext = page.add(Text(width=page.cols-self.opttext.width))
         page.newline()
@@ -95,7 +82,7 @@ class MPDPrinter(Printer):
         self.updatestatus = page.add(Text(width=1))
         self.pages.append(page)
 
-        self.active = self.PAGE_PLAYER
+        self.set_active(self.PAGE.PLAYER)
         
     def __del__(self):
         self.stop()
@@ -103,42 +90,61 @@ class MPDPrinter(Printer):
     def stop(self):
         if not self._thread:
             return
-        if not self._thread.is_alive():
-            if self.debug: print type(self).__name__, ": Thread not running"
-        if self.debug: print type(self).__name__, ": Stopping thread"
         self._thread.stop()
-        self._thread.join()
         self._thread = None
-        if self.debug: print type(self).__name__, ": Thread stopped"
         
     def init(self):
         if not self._thread:
-            self._thread = MPDThread(self.mpdhost,self.mpdport)
+            self._thread = MPDThread(self.mpdhost,self.mpdport,self.logger)
             self._thread.start()
         self.lcd.set_color(*self.color)
-        self.active = 0
+        self.set_active(self.PAGE.PLAYER)
         self.render(True)
     
     def render(self,force=False):
-        self.update_changed(self._thread.release_changed())
+        changed = self._thread.pop_data()
+        if not changed:
+            changed = []
+        deps = self.DEPS[self.active]
+        changed = [ i for i in changed if i in deps ] 
+        if force:
+            changed += deps
+                    
+        self.update(list(set(changed)))
         super(MPDPrinter,self).render(force)
     
-    def update_changed(self,changed_list=[], update_all=False):
-        if update_all:
-            changed = ['player', 'options', 'mixer', 'update']
-        else:
-            changed = changed_list[:]
-
+    def update(self,changed=[]):
         self._mpd.connect(self.mpdhost, self.mpdport)
         status = self._mpd.status()
-        current = self._mpd.currentsong()
+        if len(changed):
+            current = self._mpd.currentsong()
         self._mpd.disconnect()
         
-        if self.debug: print type(self).__name__, 'updating', changed
+        timetext = '/'.join( [ strtime(i) for i in status.get('time', '0:0').split(':') ])
+        self.timetext.setText( timetext.rjust(self.timetext.width))
+
+        if not len(changed):
+            return
+        
+        if 'player' in changed and not 'playlist' in changed:
+            changed.append('playlist')
+        
+        self.logger.debug( '%s updating %s' % (type(self).__name__,str(changed)))
         for i in changed:
             if i == 'player':
-                songtext = "%s - %s" % (current.get('artist', '<Unknown Artist>'),
-                                        current.get('title',  '<Unknown Title>'))
+                #print current
+                artist = current.get('artist',None)
+                album  = current.get('album' ,None)
+                title  = current.get('title' ,None)
+                genre  = current.get('genre' ,None)
+                items = []
+                if artist:
+                    items.append(artist)
+                if album and genre and genre in ['Books & Spoken', 'Drama', 'Podcast']:
+                    items.append(album)
+                if title:
+                    items.append(title)
+                songtext = " - ".join(items)
                 self.songtext.setText(songtext)
                 state = status['state']
                 if state == 'play':
@@ -148,6 +154,7 @@ class MPDPrinter(Printer):
                 else:
                     state = LCD.SYM_STOP
                 self.statetext.setText(chr(state))
+            elif i == 'playlist':
                 plstext = ("%d/%d" % (int(status.get('song', '-1'))+1,int(status.get('playlistlength', '-1'))))
                 self.plstext.setText( plstext.ljust(self.plstext.width))
             elif i == 'options':
@@ -164,15 +171,11 @@ class MPDPrinter(Printer):
                 self.volumetext.setText(volumetext.rjust(self.volumetext.width))
             elif i == 'update':
                 self.updatestatus.setText( chr(LCD.SYM_CLOCK) if status.get('updating_db', False) else ' ')
+            elif i == 'sticker':
+                pass
             else:
-                if self.debug: print type(self).__name__, "unhandled event", i
-        timetext = '/'.join( [ strtime(i) for i in status.get('time', '0:0').split(':') ])
-        self.timetext.setText( timetext.rjust(self.timetext.width))
+                self.logger.debug( "%s unhandled event %s" %( type(self).__name__, i))
         
-    def update(self):
-        if self.debug: print type(self).__name__ + " update"
-        self.update_changed(update_all=True)
-            
     def call_mpd(self,cmd, *args):
         self._mpd.connect(self.mpdhost, self.mpdport)
         ret = self._mpd.__getattr__(cmd)(*args)
@@ -189,7 +192,7 @@ class MPDPrinter(Printer):
         self._mpd.disconnect()
 
     def button_pressed(self,btn,repeat):
-        if self.active == self.PAGE_PLAYER:
+        if self.active == self.PAGE.PLAYER:
             if btn == LCD.RIGHT:
                 self.call_mpd('next')
             elif btn == LCD.LEFT:
@@ -198,7 +201,7 @@ class MPDPrinter(Printer):
                 self.call_mpd('stop')
             elif btn == LCD.UP and not repeat:
                 self.toggle_play()
-        elif self.active == self.PAGE_OPTIONS:
+        elif self.active == self.PAGE.OPTIONS:
             volumetext = self.volumetext.text[:-1]
             if len(volumetext):
                 volume = int(volumetext)
