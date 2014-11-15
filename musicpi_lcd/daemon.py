@@ -40,12 +40,13 @@ def detach():
     os.dup2(se.fileno(), sys.stderr.fileno())
 
 def check_if_root():
-    if not os.geteuid() == 0:
-        return False
-    return True
+    return os.geteuid() == 0
 
 def check_if_running(name, kill=False):
-    pidfile = "/var/run/%s.pid" % name
+    if check_if_root():
+        pidfile = "/var/run/%s.pid" % name
+    else:
+        pidfile = os.path.join(os.environ['HOME'],".%s.pid" % name)
     if not os.path.exists( pidfile):
         return False
     f = open(pidfile)
@@ -90,7 +91,10 @@ def check_if_running(name, kill=False):
     return True
     
 def create_pid_file(name):
-    pidfile = '/var/run/%s.pid' % name 
+    if check_if_root():
+        pidfile = '/var/run/%s.pid' % name 
+    else:
+        pidfile = os.path.join(os.environ['HOME'],".%s.pid" % name)
     f = open(pidfile, 'w')
     print>>f, os.getpid()
     f.close()
