@@ -1,9 +1,9 @@
 import subprocess
 
-from musicpi_lcd.lcd     import LCD
-from musicpi_lcd.printer import Printer
-from musicpi_lcd.text    import *
-from musicpi_lcd.thread  import BaseThread as Thread
+from lcd     import LCD
+from printer import Printer
+from text    import *
+from thread  import BaseThread as Thread
 
 from mpd import MPDClient
 

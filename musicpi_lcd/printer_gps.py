@@ -1,6 +1,6 @@
-from musicpi_lcd.printer import Printer
-from musicpi_lcd.text    import *
-from musicpi_lcd.thread  import BaseThread as Thread
+from printer import Printer
+from text    import *
+from thread  import BaseThread as Thread
 
 import dateutil.parser
 from   dateutil.tz import tzlocal

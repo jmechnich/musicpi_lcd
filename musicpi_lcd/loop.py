@@ -1,6 +1,6 @@
 import time
 
-from musicpi_lcd.lcd  import LCD, buttons
+from lcd import LCD, buttons
 
 class Loop(object):
     def __init__(self, **kwargs):

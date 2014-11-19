@@ -1,7 +1,7 @@
 import logging
 
-from musicpi_lcd.lcd  import LCD, buttons, colors
-from musicpi_lcd.text import *
+from lcd  import LCD, buttons, colors
+from text import *
 
 class Printer(object):
     def __init__(self,**kwargs):

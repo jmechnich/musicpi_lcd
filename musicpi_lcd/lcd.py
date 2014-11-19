@@ -1,4 +1,3 @@
-
 import Adafruit_CharLCD as Base
 
 colors = {

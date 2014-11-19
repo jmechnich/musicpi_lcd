@@ -1,8 +1,8 @@
 import time, os, re, subprocess, sys, psutil
 
-from musicpi_lcd.lcd import LCD
-from musicpi_lcd.printer import Printer
-from musicpi_lcd.text    import *
+from lcd import LCD
+from printer import Printer
+from text    import *
 
 class SystemPrinter(Printer):
     
