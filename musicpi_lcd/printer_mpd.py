@@ -191,12 +191,25 @@ class MPDPrinter(Printer):
             self._mpd.play()
         self._mpd.disconnect()
 
-    def button_pressed(self,btn,repeat):
+    def button_clicked(self,btn):
         if self.active == self.PAGE.PLAYER:
             if btn == LCD.RIGHT:
                 self.call_mpd('next')
             elif btn == LCD.LEFT:
                 self.call_mpd('previous')
+        
+    def button_pressed(self,btn,repeat):
+        if self.active == self.PAGE.PLAYER:
+            if (btn == LCD.LEFT or btn == LCD.RIGHT) and repeat:
+                status = self.call_mpd('status')
+                secs   = int(float(status['elapsed'])+0.5)
+                songid = status['songid']
+                if btn == LCD.RIGHT:
+                    secs += 10
+                    self.call_mpd('seek', songid, str(secs))
+                elif btn == LCD.LEFT:
+                    secs -= 10
+                    self.call_mpd('seek', songid, str(secs))
             elif btn == LCD.DOWN and not repeat:
                 self.call_mpd('stop')
             elif btn == LCD.UP and not repeat:
