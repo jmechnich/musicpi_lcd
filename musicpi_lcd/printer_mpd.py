@@ -197,6 +197,7 @@ class MPDPrinter(Printer):
                 self.call_mpd('next')
             elif btn == LCD.LEFT:
                 self.call_mpd('previous')
+        super(MPDPrinter,self).button_clicked(btn)
         
     def button_pressed(self,btn,repeat):
         if self.active == self.PAGE.PLAYER:
