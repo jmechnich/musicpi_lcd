@@ -5,7 +5,7 @@ from printer import Printer
 from text    import *
 from thread  import BaseThread as Thread
 
-from mpd import MPDClient
+from mpd import MPDClient, MPDError
 
 class MPDThread(Thread):
     def __init__(self,mpdhost,mpdport,logger):
@@ -15,11 +15,14 @@ class MPDThread(Thread):
         self.port = mpdport
         
     def run(self):
-        self.mpd.connect(self.host,self.port)
-        while self.iterate():
-            self.subsys = self.mpd.idle()
-            self.set_data(self.subsys)
-        self.mpd.disconnect()
+        try:
+            self.mpd.connect(self.host,self.port)
+            while self.iterate():
+                self.subsys = self.mpd.idle()
+                self.set_data(self.subsys)
+            self.mpd.disconnect()
+        except MPDError, e:
+            self.logger.debug('%s' % str(e))
         
     def stop_iterate(self):
         self.mpd.noidle()

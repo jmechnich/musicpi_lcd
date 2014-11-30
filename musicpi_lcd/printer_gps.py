@@ -15,13 +15,19 @@ class GPSThread(Thread):
         session = gps.gps(mode=gps.WATCH_ENABLE)
         while self.iterate():
             gpsinfo = None
+            satellites = None
             maxtries = 10
             try:
                 while not gpsinfo and maxtries:
                     report = session.next()
-                    if report['class'] == 'TPV':
+                    if report['class'] == 'TPV' and satellites:
                         gpsinfo = dict(report)
+                        gpsinfo['satellites'] = satellites
                         break
+                    elif report['class'] == 'SKY':
+                        sats_used  = len([ s for s in report.get('satellites', {}) if s['used'] == True])
+                        sats_avail = len([ s for s in report.get('satellites', {})])
+                        satellites = (sats_used, sats_avail)
                     maxtries -= 1
             except StopIteration:
                 pass
@@ -54,7 +60,7 @@ class GPSPrinter(Printer):
 
         page = Page(self.lcd,idx=self.PAGE.ALT)
         self.alt = page.add_scroll_line(header="Alt")
-        page.add_line(Text(width=self.cols))
+        self.sat = page.add_scroll_line(header="Sats used")
         self.pages.append(page)
 
         page = Page(self.lcd,idx=self.PAGE.TIME)
@@ -93,15 +99,13 @@ class GPSPrinter(Printer):
         if mode < 2:
             return
         gpstime = gpsinfo.get('time', None)
-        if self.active == self.PAGE.POS:
-            self.lon.setText(("%f" % gpsinfo.get('lon', 0.0)).rjust(self.lon.width))
-            self.lat.setText(("%f" % gpsinfo.get('lat', 0.0)).rjust(self.lat.width))
-        elif self.active == self.PAGE.SPEED:
-            self.speed.setText(("%d m/s" % gpsinfo.get('speed', 0)).rjust(self.speed.width))
-            self.track.setText(("%d deg" % gpsinfo.get('track', 0)).rjust(self.track.width))
-        elif self.active == self.PAGE.ALT and mode == 3:
-            self.alt.setText(("%d m" % gpsinfo.get('alt',0)).rjust(self.alt.width))
-        elif self.active == self.PAGE.TIME and gpstime:
+        self.lon.setText(  ("%f"        %  gpsinfo.get('lon', 0.0)     ).rjust(self.lon.width))
+        self.lat.setText(  ("%f"        %  gpsinfo.get('lat', 0.0)     ).rjust(self.lat.width))
+        self.speed.setText(("%.1f km/h" % (gpsinfo.get('speed', 0)*3.6)).rjust(self.speed.width))
+        self.track.setText(("%d deg"    %  gpsinfo.get('track', 0)     ).rjust(self.track.width))
+        self.alt.setText(  ("%d m"      %  gpsinfo.get('alt',   0)     ).rjust(self.alt.width))
+        self.sat.setText(  ("%d/%d"     %  gpsinfo.get('satellites')   ).rjust(self.sat.width))
+        if gpstime:
             localtime = dateutil.parser.parse(gpstime).astimezone(tzlocal())
             self.time.setText(("%s" % localtime.strftime('%H:%M:%S')).rjust(self.time.width))
             self.date.setText(("%s" % localtime.date()).rjust(self.date.width))

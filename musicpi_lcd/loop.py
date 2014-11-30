@@ -83,6 +83,7 @@ class Loop(object):
             self.lcd.enable_display(False)
             time.sleep(0.01)
             self.lcd.enable_display(True)
+
     def update_button(self,btnmask,btn):
         pressed = btnmask & (1 << btn)
         if pressed:
@@ -92,7 +93,7 @@ class Loop(object):
         last   = self.last.get(btn, 0)
         repeat = (count >= self.longpress)
         if pressed:
-            if last < 0: return
+            if last < 0: return True
             self.last[btn] = 1
             if count == 1:
                 self.blink()
