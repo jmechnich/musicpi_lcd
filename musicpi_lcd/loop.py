@@ -165,7 +165,7 @@ class Loop(object):
                 self.logger.debug("Got exit from button %d" % btn)
                 return False
         
-        if self.iterate_timeout():
+        if self.printers[self.idx].timeout_override or self.iterate_timeout():
             if self.autochange_real > 0:
                 self.iterate_autocounter()
         

@@ -20,7 +20,7 @@ class GPSThread(Thread):
             try:
                 while not gpsinfo and maxtries:
                     report = session.next()
-                    if report['class'] == 'TPV' and satellites:
+                    if report['class'] == 'TPV':
                         gpsinfo = dict(report)
                         gpsinfo['satellites'] = satellites
                         break
@@ -39,8 +39,11 @@ class GPSThread(Thread):
         
 class GPSPrinter(Printer):
     def __init__(self,**kwargs):
-        self.PAGES = ['POS', 'SPEED', 'ALT', 'TIME' ]
+        self.PAGES = ['POS', 'SPEED', 'TRACK', 'TIME' ]
         super(GPSPrinter,self).__init__(**kwargs)
+        
+        # always show GPS printer
+        self.timeout_override = True
         
         # internal variables
         self._thread = None
@@ -55,12 +58,12 @@ class GPSPrinter(Printer):
 
         page = Page(self.lcd,idx=self.PAGE.SPEED)
         self.speed = page.add_scroll_line(header="Speed")
-        self.track = page.add_scroll_line(header="Track")
+        self.alt   = page.add_scroll_line(header="Alt")
         self.pages.append(page)
 
-        page = Page(self.lcd,idx=self.PAGE.ALT)
-        self.alt = page.add_scroll_line(header="Alt")
-        self.sat = page.add_scroll_line(header="Sats used")
+        page = Page(self.lcd,idx=self.PAGE.TRACK)
+        self.track = page.add_scroll_line(header="Track")
+        self.sat   = page.add_scroll_line(header="Sats used")
         self.pages.append(page)
 
         page = Page(self.lcd,idx=self.PAGE.TIME)
@@ -104,7 +107,9 @@ class GPSPrinter(Printer):
         self.speed.setText(("%.1f km/h" % (gpsinfo.get('speed', 0)*3.6)).rjust(self.speed.width))
         self.track.setText(("%d deg"    %  gpsinfo.get('track', 0)     ).rjust(self.track.width))
         self.alt.setText(  ("%d m"      %  gpsinfo.get('alt',   0)     ).rjust(self.alt.width))
-        self.sat.setText(  ("%d/%d"     %  gpsinfo.get('satellites')   ).rjust(self.sat.width))
+        satellites = gpsinfo['satellites']
+        if satellites:
+            self.sat.setText(("%d/%d" %  satellites).rjust(self.sat.width))
         if gpstime:
             localtime = dateutil.parser.parse(gpstime).astimezone(tzlocal())
             self.time.setText(("%s" % localtime.strftime('%H:%M:%S')).rjust(self.time.width))

@@ -25,7 +25,10 @@ class MPDThread(Thread):
             self.logger.debug('%s' % str(e))
         
     def stop_iterate(self):
-        self.mpd.noidle()
+        try:
+            self.mpd.noidle()
+        except:
+            pass
 
 def strtime(seconds):
     seconds = float(seconds)

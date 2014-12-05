@@ -46,16 +46,16 @@ class SystemPrinter(Printer):
         self.pages.append(page)
 
         page = Page(self.lcd,idx=self.PAGE.CTRL)
-        page.add(CycleText(
-                [ chr(LCD.SYM_RIGHT) + 'Restart wifi',
-                  chr(LCD.SYM_UP)    + 'Sync USB drive', ],
-                width=self.cols))
-        page.add(CycleText(
-                [ chr(LCD.SYM_LEFT)  + 'Reboot',
-                  chr(LCD.SYM_DOWN)  + 'Restart logging', ],
-                width=self.cols))
+        page.add(Text(chr(LCD.SYM_LEFT)))
+        page.add(ScrollText('Reboot',     width=7))
+        page.add(Text(chr(LCD.SYM_RIGHT)))
+        page.add(ScrollText('ResetWifi', width=7))
+        page.add(Text(chr(LCD.SYM_UP)))
+        page.add(ScrollText('SyncUSB',   width=7))
+        page.add(Text(chr(LCD.SYM_DOWN)))
+        page.add(ScrollText('ResetLog', width=7))
         self.pages.append(page)
-        
+
         self.set_active(self.PAGE.WIFI)
         
     def init(self):

@@ -14,7 +14,7 @@ class Printer(object):
         # configurable variables
         self.color = colors['white']
         self.splashticks = 1
-
+        self.timeout_override = False
         self.__dict__.update(kwargs)
         
         self.exit = False
