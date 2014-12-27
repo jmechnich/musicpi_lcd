@@ -80,19 +80,29 @@ class SystemPrinter(Printer):
         self.logger.debug('%s updating %s' % (type(self).__name__, str(changed)))
         for i in changed:
             if i == 'net':
-                ifconfig_out = subprocess.check_output(["ifconfig",self.device])
-                iwconfig_out = subprocess.check_output(["iwconfig",self.device])
-                
-                ipmatch = re.search( self.ipre, ifconfig_out)
-                ip = "None"
-                if ipmatch:
-                    ip = ipmatch.groups()[0]
+                ip    = "None"
+                essid = "None"
+                try:
+                    ifconfig_out = subprocess.check_output(
+                        ["ifconfig",self.device],stderr=subprocess.STDOUT)
+                    ipmatch = re.search( self.ipre, ifconfig_out)
+                    if ipmatch:
+                        ip = ipmatch.groups()[0]
+                except:
+                    ip = "N/A"
+
+                try:
+                    iwconfig_out = subprocess.check_output(
+                        ["iwconfig",self.device],stderr=subprocess.STDOUT)
+                    essidmatch = re.search( self.essidre, iwconfig_out)
+                    if essidmatch:
+                        essid = essidmatch.groups()[0]
+                except:
+                    essid = "N/A"
+
                 self.iptext.setText(ip.rjust(self.iptext.width))
-                    
-                essidmatch = re.search( self.essidre, iwconfig_out)
-                essid = ""
-                if essidmatch:
-                    essid = essidmatch.groups()[0]
+                if len(essid) < self.essidtext.width:
+                    essid = essid.rjust(self.essidtext.width)
                 self.essidtext.setText(essid)
             elif i == 'date':
                 cur =  time.strftime("%D %H:%M")

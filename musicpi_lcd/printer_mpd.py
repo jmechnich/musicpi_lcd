@@ -209,6 +209,8 @@ class MPDPrinter(Printer):
         if self.active == self.PAGE.PLAYER:
             if (btn == LCD.LEFT or btn == LCD.RIGHT) and repeat:
                 status = self.call_mpd('status')
+                if not status.has_key('elapsed'):
+                    return
                 secs   = int(float(status['elapsed'])+0.5)
                 songid = status['songid']
                 if btn == LCD.RIGHT:
